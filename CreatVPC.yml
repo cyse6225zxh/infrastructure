@@ -5,6 +5,7 @@ Parameters:
   EnvironmentName:
     Description: An environment name that is prefixed to resource names
     Type: String
+    Default: Xuhui's vpc
 
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
@@ -30,6 +31,10 @@ Parameters:
     Description: Please enter the IP range (CIDR notation) for the route table 
     Type: String
     Default: 0.0.0.0/0
+
+  AMIID:
+    Type: String
+    Default: ami-011b5125a9091e0b2
 
 
 
@@ -126,3 +131,48 @@ Resources:
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet3
+  
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Application security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+  
+  DbInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AMIID
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !GetAtt ApplicationSecurityGroup.GroupId
+      SubnetId: !Ref PublicSubnet1
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: '20'
+            DeleteOnTermination: 'true'
+            Encrypted: 'true'
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash -
+          sudo su
+          rm /var/lib/cloud/instances/*/sem/config_scripts_user
+          java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
