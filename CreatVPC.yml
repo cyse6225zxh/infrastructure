@@ -27,6 +27,21 @@ Parameters:
     Type: String
     Default: 10.192.12.0/24
 
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
+
+  PrivateSubnet3CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the third Availability Zone
+    Type: String
+    Default: 10.192.22.0/24
+
   RouteTableCIDR:
     Description: Please enter the IP range (CIDR notation) for the route table 
     Type: String
@@ -34,7 +49,15 @@ Parameters:
 
   AMIID:
     Type: String
-    Default: ami-011b5125a9091e0b2
+  
+  BucketID:
+    Type: String
+
+  AccessKey:
+    Type: String
+  
+  SecretKey:
+    Type: String
 
 
 
@@ -106,6 +129,40 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName} Public Routes
 
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ3)
+
   DefaultPublicRoute:
     Type: AWS::EC2::Route
     DependsOn: InternetGatewayAttachment
@@ -131,6 +188,37 @@ Resources:
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet3
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+
+
+        
+        
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet3
   
   ApplicationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -154,11 +242,116 @@ Resources:
           IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
-  
-  DbInstance:
-    Type: AWS::EC2::Instance
+
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
+      GroupDescription: Database security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref BucketID
+      LifecycleConfiguration: 
+        Rules:
+          - Id: Rule for log prefix
+            Prefix: logs
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+            ExpirationInDays: 365
+
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup    
+    Properties: 
+      Description: A DBparameterGroup
+      Family: MySQL5.6
+      
+  myDBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: "description"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+
+  MyDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier:
+        "csye6225"        
+      VPCSecurityGroups: 
+      - !GetAtt DBSecurityGroup.GroupId
+      DBName: "csye6225"
+      DBSubnetGroupName: !Ref myDBSubnetGroup
+      PubliclyAccessible: "false"
+      MultiAZ: "false"
+      AllocatedStorage: '5'
+      DBInstanceClass: db.t3.micro
+      Engine: MySQL
+      MasterUsername: "csye6225"
+      MasterUserPassword: "87171799"
+    DeletionPolicy: Snapshot
+
+
+
+
+  WebAppS3Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: WebAppS3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+                Resource: "arn:aws:s3:::${BucketID}"
+
+  S3BucketsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: WebAppS3Role
+
+  ApplicationInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: MyDB
+    Properties:      
       ImageId: !Ref AMIID
+      IamInstanceProfile: !Ref S3BucketsInstanceProfile
       InstanceType: t2.micro
       SecurityGroupIds:
         - !GetAtt ApplicationSecurityGroup.GroupId
@@ -173,6 +366,15 @@ Resources:
       UserData: 
         Fn::Base64: !Sub |
           #!/bin/bash -
-          sudo su
-          rm /var/lib/cloud/instances/*/sem/config_scripts_user
-          java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
+          sudo su          
+          echo export SQL_URL=${MyDB.Endpoint.Address} >> /etc/environment
+          echo export SQL_USERNAME="csye6225" >> /etc/environment
+          echo export SQL_PASSWORD="87171799" >> /etc/environment
+          echo export BUCKETNAME=${BucketID} >> /etc/environment
+          echo export ACCESSKEY=${AccessKey} >> /etc/environment
+          echo export SECRETKEY=${SecretKey} >> /etc/environment 
+          sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
+
+        
+          
+          
