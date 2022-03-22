@@ -59,6 +59,14 @@ Parameters:
   SecretKey:
     Type: String
 
+  DomainName:
+    Type: String
+    Default: "prod.xuhuizhu.me"
+  
+  HostZone:
+    Type: String
+    Default: Z1029382CU90ACOHPKR3
+
 
 
 
@@ -220,10 +228,12 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable1
       SubnetId: !Ref PrivateSubnet3
   
-  ApplicationSecurityGroup:
+
+
+  LoadBalanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Application security group
+      GroupDescription: Load Balancer security group
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - CidrIp: 0.0.0.0/0
@@ -232,13 +242,21 @@ Resources:
           ToPort: 80
         - CidrIp: 0.0.0.0/0
           IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-        - CidrIp: 0.0.0.0/0
-          IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-        - CidrIp: 0.0.0.0/0
+
+
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Application security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !GetAtt LoadBalanceSecurityGroup.GroupId
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+        - SourceSecurityGroupId: !GetAtt LoadBalanceSecurityGroup.GroupId
           IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -250,27 +268,33 @@ Resources:
       GroupDescription: Database security group
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        - CidrIp: 0.0.0.0/0
-          IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-        - CidrIp: 0.0.0.0/0
-          IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-        - CidrIp: 0.0.0.0/0
-          IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-        - CidrIp: 0.0.0.0/0
-          IpProtocol: tcp
-          FromPort: 3306
-          ToPort: 3306
+          - IpProtocol: tcp
+            FromPort: 3306
+            ToPort: 3306
+            SourceSecurityGroupId: !GetAtt ApplicationSecurityGroup.GroupId
 
   Bucket:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Ref BucketID
+      BucketName: !Join
+        - "-"
+        - - "xuhuizhubucket"
+          - !Select
+            - 0
+            - !Split
+              - "-"
+              - !Select
+                - 2
+                - !Split
+                  - "/"
+                  - !Ref "AWS::StackId"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
       LifecycleConfiguration: 
         Rules:
           - Id: Rule for log prefix
@@ -286,7 +310,7 @@ Resources:
     Type: AWS::RDS::DBParameterGroup    
     Properties: 
       Description: A DBparameterGroup
-      Family: MySQL5.6
+      Family: MySQL8.0
       
   myDBSubnetGroup:
     Type: "AWS::RDS::DBSubnetGroup"
@@ -306,6 +330,7 @@ Resources:
       - !GetAtt DBSecurityGroup.GroupId
       DBName: "csye6225"
       DBSubnetGroupName: !Ref myDBSubnetGroup
+      DBParameterGroupName: !Ref DBParameterGroup
       PubliclyAccessible: "false"
       MultiAZ: "false"
       AllocatedStorage: '5'
@@ -337,7 +362,9 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
-                Resource: "arn:aws:s3:::${BucketID}"
+                Resource: 
+                  - "arn:aws:s3:::${BucketID}"
+                  - "arn:aws:s3:::${BucketID}/*"
 
   S3BucketsInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -346,35 +373,224 @@ Resources:
       Roles:
         - Ref: WebAppS3Role
 
-  ApplicationInstance:
-    Type: AWS::EC2::Instance
-    DependsOn: MyDB
-    Properties:      
-      ImageId: !Ref AMIID
-      IamInstanceProfile: !Ref S3BucketsInstanceProfile
-      InstanceType: t2.micro
-      SecurityGroupIds:
-        - !GetAtt ApplicationSecurityGroup.GroupId
-      SubnetId: !Ref PublicSubnet1
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeType: gp2
-            VolumeSize: '20'
-            DeleteOnTermination: 'true'
-            Encrypted: 'true'
-      UserData: 
-        Fn::Base64: !Sub |
-          #!/bin/bash -
-          sudo su          
-          echo export SQL_URL=${MyDB.Endpoint.Address} >> /etc/environment
-          echo export SQL_USERNAME="csye6225" >> /etc/environment
-          echo export SQL_PASSWORD="87171799" >> /etc/environment
-          echo export BUCKETNAME=${BucketID} >> /etc/environment
-          echo export ACCESSKEY=${AccessKey} >> /etc/environment
-          echo export SECRETKEY=${SecretKey} >> /etc/environment 
-          sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
+  # ApplicationInstance:
+  #   Type: AWS::EC2::Instance
+  #   DependsOn: MyDB
+  #   Properties:      
+  #     ImageId: !Ref AMIID
+  #     IamInstanceProfile: !Ref S3BucketsInstanceProfile
+  #     InstanceType: t2.micro
+  #     SecurityGroupIds:
+  #       - !GetAtt ApplicationSecurityGroup.GroupId
+  #     SubnetId: !Ref PublicSubnet1
+  #     BlockDeviceMappings:
+  #       - DeviceName: /dev/xvda
+  #         Ebs:
+  #           VolumeType: gp2
+  #           VolumeSize: '20'
+  #           DeleteOnTermination: 'true'
+  #           Encrypted: 'true'
+  #     UserData: 
+  #       Fn::Base64: !Sub |
+  #         #!/bin/bash -
+  #         sudo su          
+  #         echo export SQL_URL=${MyDB.Endpoint.Address} >> /etc/environment
+  #         echo export SQL_USERNAME="csye6225" >> /etc/environment
+  #         echo export SQL_PASSWORD="87171799" >> /etc/environment
+  #         echo export BUCKETNAME=${BucketID} >> /etc/environment
+  #         echo export ACCESSKEY=${AccessKey} >> /etc/environment
+  #         echo export SECRETKEY=${SecretKey} >> /etc/environment 
+  #         sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
 
         
           
-          
+  asgLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${AWS::StackName}-launch-template'
+      LaunchTemplateData:
+        ImageId: !Ref AMIID
+        IamInstanceProfile: 
+          Arn: !GetAtt S3BucketsInstanceProfile.Arn
+        InstanceType: t2.micro
+        SecurityGroupIds:
+          - !GetAtt ApplicationSecurityGroup.GroupId
+        #KeyName: csye6225
+        # NetworkInterfaces: 
+        #   - AssociatePublicIpAddress: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp2
+              VolumeSize: '20'
+              DeleteOnTermination: 'true'
+              Encrypted: 'true'
+        UserData: 
+          Fn::Base64: !Sub |
+            #!/bin/bash -
+            sudo su          
+            echo export SQL_URL=${MyDB.Endpoint.Address} >> /etc/environment
+            echo export SQL_USERNAME="csye6225" >> /etc/environment
+            echo export SQL_PASSWORD="87171799" >> /etc/environment
+            echo export BUCKETNAME=${BucketID} >> /etc/environment
+            echo export ACCESSKEY=${AccessKey} >> /etc/environment
+            echo export SECRETKEY=${SecretKey} >> /etc/environment 
+            sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
+
+  
+  asgWebApp:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: MyDB
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-asg
+      AvailabilityZones:
+        - us-east-1a
+        - us-east-1b
+        - us-east-1c
+      Cooldown: '60'
+      DesiredCapacity: '3'
+      HealthCheckGracePeriod: 90
+      HealthCheckType: EC2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref asgLaunchTemplate
+        Version: !GetAtt asgLaunchTemplate.LatestVersionNumber
+      # LoadBalancerNames:
+      #   - String
+      MaxSize: '5'
+      MinSize: '3'
+      NewInstancesProtectedFromScaleIn: false
+      Tags:
+        - Key: Application
+          Value: WebApp
+          PropagateAtLaunch: "true"
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-asg
+          PropagateAtLaunch: "true"
+      TargetGroupARNs:
+        - !Ref loadBalancerTargetGroup
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+
+  WebServerScaleUpPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgWebApp
+      Cooldown: '60'
+      ScalingAdjustment: '1'
+
+  WebServerScaleDownPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgWebApp
+      Cooldown: '60'
+      ScalingAdjustment: '-1'
+
+  CPUAlarmHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up if CPU > 5% 
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '120'
+      EvaluationPeriods: '1'
+      Threshold: '5'
+      AlarmActions:
+        - !Ref WebServerScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgWebApp
+      ComparisonOperator: GreaterThanThreshold
+
+  CPUAlarmLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down if CPU < 3% 
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '120'
+      EvaluationPeriods: '1'
+      Threshold: '3'
+      AlarmActions:
+        - !Ref WebServerScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgWebApp
+      ComparisonOperator: LessThanThreshold
+
+  loadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Name: !Sub ${AWS::StackName}-load-balancer
+      Scheme: internet-facing
+      SecurityGroups:
+        - !GetAtt LoadBalanceSecurityGroup.GroupId
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      Tags:
+        - Key: Application
+          Value: WebApp
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-load-balancer
+      Type: application
+
+  loadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 90
+      HealthCheckPath: '/healthz'
+      HealthCheckPort: '8080'
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckTimeoutSeconds: 60
+      HealthyThresholdCount: 2
+      IpAddressType: ipv4
+      Name: !Sub ${AWS::StackName}-lb-tg
+      Port: 8080
+      Protocol: 'HTTP'
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-lb-tg
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VPC
+
+  loadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref loadBalancerTargetGroup
+      LoadBalancerArn: !Ref loadBalancer
+      Port: 80
+      Protocol: HTTP
+
+
+  dnsARecordSet:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      Name: !Ref DomainName
+      Type: A
+      HostedZoneId: !Ref HostZone
+      AliasTarget:
+        DNSName: !GetAtt 
+          - loadBalancer
+          - DNSName
+        EvaluateTargetHealth: false
+        HostedZoneId: !GetAtt 
+          - loadBalancer
+          - CanonicalHostedZoneID
+
