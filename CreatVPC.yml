@@ -53,6 +53,7 @@ Parameters:
   BucketID:
     Type: String
 
+
   AccessKey:
     Type: String
   
@@ -276,18 +277,7 @@ Resources:
   Bucket:
     Type: AWS::S3::Bucket
     Properties: 
-      BucketName: !Join
-        - "-"
-        - - "xuhuizhubucket"
-          - !Select
-            - 0
-            - !Split
-              - "-"
-              - !Select
-                - 2
-                - !Split
-                  - "/"
-                  - !Ref "AWS::StackId"
+      BucketName: !Ref BucketID
       AccessControl: Private
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
