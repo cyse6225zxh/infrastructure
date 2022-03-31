@@ -47,6 +47,7 @@ Parameters:
     Type: String
     Default: 0.0.0.0/0
 
+
   AMIID:
     Type: String
   
@@ -363,6 +364,14 @@ Resources:
       Roles:
         - Ref: WebAppS3Role
 
+
+  CodeDeployInstanceProfile1:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - EC2ExecutionRole
+          
+
   # ApplicationInstance:
   #   Type: AWS::EC2::Instance
   #   DependsOn: MyDB
@@ -401,7 +410,7 @@ Resources:
       LaunchTemplateData:
         ImageId: !Ref AMIID
         IamInstanceProfile: 
-          Arn: !GetAtt S3BucketsInstanceProfile.Arn
+          Arn: !GetAtt CodeDeployInstanceProfile1.Arn          
         InstanceType: t2.micro
         SecurityGroupIds:
           - !GetAtt ApplicationSecurityGroup.GroupId
@@ -423,9 +432,9 @@ Resources:
             echo export SQL_USERNAME="csye6225" >> /etc/environment
             echo export SQL_PASSWORD="87171799" >> /etc/environment
             echo export BUCKETNAME=${BucketID} >> /etc/environment
-            echo export ACCESSKEY=${AccessKey} >> /etc/environment
-            echo export SECRETKEY=${SecretKey} >> /etc/environment 
-            sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
+            # echo export ACCESSKEY=${AccessKey} >> /etc/environment
+            # echo export SECRETKEY=${SecretKey} >> /etc/environment 
+            # sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
 
   
   asgWebApp:
@@ -584,3 +593,50 @@ Resources:
           - loadBalancer
           - CanonicalHostedZoneID
 
+  codeDeployEC2ServiceRoleId:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: codeDeployEC2ServiceRole
+            Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      RoleName: 1CodeDeployEC2ServiceRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-CodeDeployEC2ServiceRole'
+  ec2ApplicationId:
+    Type: 'AWS::CodeDeploy::Application'
+    Properties:
+      ApplicationName: csye6225-webapp
+      ComputePlatform: Server
+  ec2DeploymentGroupId:
+    Type: 'AWS::CodeDeploy::DeploymentGroup'
+    Properties:
+      ApplicationName: !Ref ec2ApplicationId
+      DeploymentGroupName: csye6225-webapp-deployment
+      AutoScalingGroups:
+        - !Ref asgWebApp
+      ServiceRoleArn: !GetAtt 
+        - codeDeployEC2ServiceRoleId
+        - Arn
+      DeploymentStyle:
+        DeploymentType: IN_PLACE
+        DeploymentOption: WITHOUT_TRAFFIC_CONTROL
+      Ec2TagFilters:
+        - Key: Application Role
+          Value: Web Server
+          Type: KEY_AND_VALUE
+      DeploymentConfigName: CodeDeployDefault.AllAtOnce
+      AutoRollbackConfiguration:
+        Enabled: 'True'
+        Events:
+          - DEPLOYMENT_FAILURE
+          - DEPLOYMENT_STOP_ON_ALARM
+          - DEPLOYMENT_STOP_ON_REQUEST
