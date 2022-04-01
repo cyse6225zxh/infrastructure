@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation Template for CircleCI Roles and Policies
+Parameters:
+  domainName:
+    Description: domain Name for S3 Bucket Naming
+    Type: String
+    Default: prod.xuhuizhu.me
+
+Resources:
+  GHEC2AMI:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: GH-EC2-AMI
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'ec2:AttachVolume'
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:CopyImage'
+              - 'ec2:CreateImage'
+              - 'ec2:CreateKeypair'
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:CreateSnapshot'
+              - 'ec2:CreateTags'
+              - 'ec2:CreateVolume'
+              - 'ec2:DeleteKeyPair'
+              - 'ec2:DeleteSecurityGroup'
+              - 'ec2:DeleteSnapshot'
+              - 'ec2:DeleteVolume'
+              - 'ec2:DeregisterImage'
+              - 'ec2:DescribeImageAttribute'
+              - 'ec2:DescribeImages'
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeInstanceStatus'
+              - 'ec2:DescribeRegions'
+              - 'ec2:DescribeSecurityGroups'
+              - 'ec2:DescribeSnapshots'
+              - 'ec2:DescribeSubnets'
+              - 'ec2:DescribeTags'
+              - 'ec2:DescribeVolumes'
+              - 'ec2:DetachVolume'
+              - 'ec2:GetPasswordData'
+              - 'ec2:ModifyImageAttribute'
+              - 'ec2:ModifyInstanceAttribute'
+              - 'ec2:ModifySnapshotAttribute'
+              - 'ec2:RegisterImage'
+              - 'ec2:RunInstances'
+              - 'ec2:StopInstances'
+              - 'ec2:TerminateInstances'
+            Resource: '*'
+  
+  CodeDeployEC2S3:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: CodeDeploy-EC2-S3
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:Get*'
+              - 's3:List*'
+            Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::xuhuizhucodedeploy/*'
+              - 'arn:aws:s3:::aws-codedeploy-us-east-2/*'
+              - 'arn:aws:s3:::aws-codedeploy-us-east-1/*'
+
+  GHUploadToS3:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: GH-Upload-To-S3
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:PutObject'
+              - 's3:Get*'
+              - 's3:List*'
+            Effect: Allow
+            Resource: 
+              - 'arn:aws:s3:::xuhuizhucodedeploy/*'
+
+
+  GHCodeDeploy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: GH-Code-Deploy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'codedeploy:RegisterApplicationRevision'
+              - 'codedeploy:GetApplicationRevision'
+              - 'codedeploy:ListApplicationRevisions'
+            Resource:
+              - !Sub >-
+                arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:application:csye6225-webapp
+          - Effect: Allow
+            Action:
+              - 'codedeploy:CreateDeployment'
+              - 'codedeploy:GetDeployment'
+            Resource:
+              - !Sub >-
+                arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:csye6225-webapp/csye6225-webapp-deployment
+          - Effect: Allow
+            Action:
+              - 'codedeploy:GetDeploymentConfig'
+            Resource:
+              - !Sub >-
+                arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.OneAtATime
+              - !Sub >-
+                arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.HalfAtATime
+              - !Sub >-
+                arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.AllAtOnce
+              - !Sub >-
+                arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.LambdaAllAtOnce
+
+
+  CodeDeployServiceRole1:
+    Type: 'AWS::IAM::Role'
+    DependsOn: CodeDeployEC2S3
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      RoleName: EC2ExecutionRole
+      ManagedPolicyArns:
+        - !Ref CodeDeployEC2S3
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-CodeDeployServiceRole1'
