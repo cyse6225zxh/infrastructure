@@ -5,6 +5,11 @@ Parameters:
     Description: domain Name for S3 Bucket Naming
     Type: String
     Default: prod.xuhuizhu.me
+  cloudWatchAgentPolicyArn:
+    Description: CloudWatchAgentServerPolicy ARN
+    Type: String
+    Default: 'arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy'
+
 
 Resources:
   GHEC2AMI:
@@ -83,6 +88,7 @@ Resources:
               - 'arn:aws:s3:::xuhuizhucodedeploy/*'
 
 
+
   GHCodeDeploy:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -135,6 +141,7 @@ Resources:
       RoleName: EC2ExecutionRole
       ManagedPolicyArns:
         - !Ref CodeDeployEC2S3
+        - !Ref cloudWatchAgentPolicyArn
 
       Tags:
         - Key: Name
