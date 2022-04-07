@@ -69,6 +69,10 @@ Parameters:
     Type: String
     Default: Z1029382CU90ACOHPKR3
 
+  cloudWatchAgentPolicyArn:
+    Description: CloudWatchAgentServerPolicy ARN
+    Type: String
+    Default: 'arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy'
 
 
 
@@ -357,6 +361,65 @@ Resources:
                   - "arn:aws:s3:::${BucketID}"
                   - "arn:aws:s3:::${BucketID}/*"
 
+  
+  
+  CodeDeployEC2S32:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: CodeDeploy-EC2-S32
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:Get*'
+              - 's3:List*'
+            Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::xuhuizhucodedeploy/*'
+              - 'arn:aws:s3:::aws-codedeploy-us-east-2/*'
+              - 'arn:aws:s3:::aws-codedeploy-us-east-1/*'
+
+  GHUploadToS32:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: GH-Upload-To-S32
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:PutObject'
+              - 's3:Get*'
+              - 's3:List*'
+              - 's3:DeleteObject'
+            Effect: Allow
+            Resource: 
+              - 'arn:aws:s3:::xuhuizhucodedeploy/*'
+              - "arn:aws:s3:::${BucketID}"
+              - "arn:aws:s3:::${BucketID}/*"
+
+  CodeDeployServiceRole2:
+    Type: 'AWS::IAM::Role'
+    DependsOn: CodeDeployEC2S32
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      RoleName: EC2CSYEROLE
+      ManagedPolicyArns:
+        - !Ref CodeDeployEC2S32
+        - !Ref cloudWatchAgentPolicyArn
+        - !Ref GHUploadToS32
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-CodeDeployServiceRole1'
+
   S3BucketsInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -366,11 +429,12 @@ Resources:
 
 
   CodeDeployInstanceProfile1:
+    DependsOn: CodeDeployServiceRole2
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
       Roles:
-        - EC2ExecutionRole
-          
+        - EC2CSYEROLE
+  
 
   # ApplicationInstance:
   #   Type: AWS::EC2::Instance
