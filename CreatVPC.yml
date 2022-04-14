@@ -379,6 +379,7 @@ Resources:
               - 'arn:aws:s3:::aws-codedeploy-us-east-2/*'
               - 'arn:aws:s3:::aws-codedeploy-us-east-1/*'
 
+
   GHUploadToS33:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -397,6 +398,7 @@ Resources:
               - "arn:aws:s3:::${BucketID}"
               - "arn:aws:s3:::${BucketID}/*"
 
+
   EC2Excute:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -409,7 +411,6 @@ Resources:
             Effect: Allow
             Resource: 
               - "*"
-
 
   CodeDeployServiceRole2:
     Type: 'AWS::IAM::Role'
@@ -434,6 +435,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-CodeDeployServiceRole1'
+
   
   
   MyFunctionRole:
@@ -449,6 +451,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref EC2Excute
 
+
   S3BucketsInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -463,6 +466,7 @@ Resources:
     Properties:
       Roles:
         - EC2CSYEROLE
+
 
 
 
@@ -549,6 +553,7 @@ Resources:
       Handler: index.lambda_handler
       Runtime: python3.9
       Role: !GetAtt MyFunctionRole.Arn 
+
 
   
 
