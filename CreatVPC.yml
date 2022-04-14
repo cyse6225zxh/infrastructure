@@ -379,10 +379,10 @@ Resources:
               - 'arn:aws:s3:::aws-codedeploy-us-east-2/*'
               - 'arn:aws:s3:::aws-codedeploy-us-east-1/*'
 
-  GHUploadToS32:
+  GHUploadToS33:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
-      ManagedPolicyName: GH-Upload-To-S32
+      ManagedPolicyName: GH-Upload-To-S33
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -396,6 +396,20 @@ Resources:
               - 'arn:aws:s3:::xuhuizhucodedeploy/*'
               - "arn:aws:s3:::${BucketID}"
               - "arn:aws:s3:::${BucketID}/*"
+
+  EC2Excute:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: GH-Upload-To-S32
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+            - "*"
+            Effect: Allow
+            Resource: 
+              - "*"
+
 
   CodeDeployServiceRole2:
     Type: 'AWS::IAM::Role'
@@ -414,11 +428,26 @@ Resources:
       ManagedPolicyArns:
         - !Ref CodeDeployEC2S32
         - !Ref cloudWatchAgentPolicyArn
-        - !Ref GHUploadToS32
+        - !Ref GHUploadToS33
+        - !Ref EC2Excute
 
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-CodeDeployServiceRole1'
+  
+  
+  MyFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref EC2Excute
 
   S3BucketsInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -434,6 +463,93 @@ Resources:
     Properties:
       Roles:
         - EC2CSYEROLE
+
+
+
+  MyTokenTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions:
+        - 
+          AttributeName: email
+          AttributeType: S
+
+      KeySchema:
+        - 
+          AttributeName: email
+          KeyType: HASH
+      TableName: TokenTable
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      TimeToLiveSpecification: 
+        AttributeName: TimeToLive
+        Enabled: true
+        
+  MySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Csye6225Topic
+      Subscription:  
+      - 
+        Endpoint: !GetAtt MyLambda.Arn
+        Protocol: lambda
+
+  LambdaFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt MyLambda.Arn
+      Principal: sns.amazonaws.com
+
+
+
+
+  MyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code: 
+        ZipFile: >
+          import json
+
+          import smtplib
+          
+          import boto3
+
+          def lambda_handler(event, context):
+              # TODO implement
+              message = json.dumps(event)
+              client = boto3.client('ses' )    
+              data = json.loads(event['Records'][0]['Sns']['Message'])
+              print(data['email'])
+              print(data['token'])
+              
+              response = client.send_email(
+                  Destination={
+                      'ToAddresses': [data['email'],],
+                      },
+                  Message={
+                      'Body': {
+                          'Text': {
+                              'Charset': 'UTF-8',
+                              'Data': data['token'],
+                          },
+                      },
+                      'Subject': {
+                          'Charset': 'UTF-8',
+                          'Data': "this is sub",
+                      },
+                  },
+                  Source="no-reply@prod.xuhuizhu.me",
+              )
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Hello from Lambda!')
+              }
+      Handler: index.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt MyFunctionRole.Arn 
+
   
 
   # ApplicationInstance:
@@ -496,6 +612,8 @@ Resources:
             echo export SQL_USERNAME="csye6225" >> /etc/environment
             echo export SQL_PASSWORD="87171799" >> /etc/environment
             echo export BUCKETNAME=${BucketID} >> /etc/environment
+            echo export TABLENAME=${MyTokenTable} >> /etc/environment
+            echo export SNSARN=${MySNSTopic} >> /etc/environment
             # echo export ACCESSKEY=${AccessKey} >> /etc/environment
             # echo export SECRETKEY=${SecretKey} >> /etc/environment 
             # sudo java -jar /tmp/target/demo-0.0.1-SNAPSHOT.jar
