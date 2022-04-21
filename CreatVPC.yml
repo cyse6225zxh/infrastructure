@@ -47,6 +47,9 @@ Parameters:
     Type: String
     Default: 0.0.0.0/0
 
+  SSLarn:
+    Type: String
+
 
   AMIID:
     Type: String
@@ -333,7 +336,9 @@ Resources:
       Engine: MySQL
       MasterUsername: "csye6225"
       MasterUserPassword: "87171799"
-    DeletionPolicy: Snapshot
+      KmsKeyId: !Ref RDSkmsKey
+      StorageEncrypted: 'true'
+
 
 
 
@@ -588,6 +593,54 @@ Resources:
 
         
           
+
+
+
+
+  EBSkmsKey:
+    Type: AWS::KMS::Key
+    Properties: 
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 
+              - "kms:*"
+            Resource: "*"
+          - Sid: "Enable Service Role"
+            Effect: "Allow"
+            Principal: 
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling' 
+            Action: 
+              - "kms:*"
+            Resource: "*"
+
+  RDSkmsKey:
+    Type: AWS::KMS::Key
+    Properties: 
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 
+              - "kms:*"
+            Resource: "*"
+          # - Sid: "Enable Service Role"
+          #   Effect: "Allow"
+          #   Principal: 
+          #     AWS: arn:aws:iam::${AWS::AccountId}:role/EC2CSYEROLE 
+          #   Action: 
+          #     - "kms:*"
+          #   Resource: "*"
+
+
+
   asgLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
@@ -609,6 +662,7 @@ Resources:
               VolumeSize: '20'
               DeleteOnTermination: 'true'
               Encrypted: 'true'
+              KmsKeyId: !Ref EBSkmsKey
         UserData: 
           Fn::Base64: !Sub |
             #!/bin/bash -
@@ -761,8 +815,17 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref loadBalancerTargetGroup
       LoadBalancerArn: !Ref loadBalancer
-      Port: 80
-      Protocol: HTTP
+      Certificates: 
+        - CertificateArn: !Ref SSLarn
+      Port: 443
+      Protocol: HTTPS
+
+  loadBalancerCertificate:
+    Type: AWS::ElasticLoadBalancingV2::ListenerCertificate
+    Properties: 
+      Certificates: 
+        - CertificateArn: !Ref SSLarn
+      ListenerArn: !Ref loadBalancerListener
 
 
   dnsARecordSet:
